@@ -27,7 +27,7 @@ steps:
     script: 'env | sort'
   displayName: 'Display environment variables'
 
-- task: AzureKeyVault@1
+- task: AzureKeyVault@2
   inputs:
     azureSubscription: 'OneIdentity.RD.SBox.Safeguard-ServiceConnection'
     keyVaultName: 'SafeguardBuildSecrets'
@@ -35,7 +35,7 @@ steps:
   displayName: 'Get Sonatype Central Portal credentials from Azure Key Vault'
   condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
-- task: AzureKeyVault@1
+- task: AzureKeyVault@2
   inputs:
     azureSubscription: 'Azure.Infrastructure.CodeSigning'
     KeyVaultName: 'CodeSigningCertificates'
@@ -80,7 +80,7 @@ steps:
   displayName: 'Import the signing key'
   condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
-- task: Maven@3
+- task: Maven@4
   inputs:
     mavenPomFile: 'pom.xml'
     mavenOptions: '-Xmx3072m'
@@ -94,7 +94,7 @@ steps:
   displayName: 'Build and package SafeguardJava $(version)'
   condition: and(succeeded(), eq(variables.isReleaseBranch, false))
 
-- task: Maven@3
+- task: Maven@4
   inputs:
     mavenPomFile: 'pom.xml'
     mavenOptions: '-Xmx3072m'
