@@ -31,3 +31,6 @@ hs_err_pid*
 *.iml
 *.iws
 *.ipr
+
+# Copilot instructions (keep local only)
+.github/copilot-instructions.md
