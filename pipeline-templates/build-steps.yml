@@ -33,11 +33,12 @@ steps:
   - task: Bash@3
     inputs:
       targetType: 'inline'
+      workingDirectory: '$(Build.BinariesDirectory)/CodeSignTool'
       script: |
         set -e
         JAR_FILE="$(Build.SourcesDirectory)/target/safeguardjava-$(version).jar"
         echo "Signing JAR: $JAR_FILE"
-        $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh sign \
+        ./CodeSignTool.sh sign \
           -username "ssl.oid.safeguardpp@groups.quest.com" \
           -password "$(SPPCodeSigning-Password)" \
           -totp_secret "$(SPPCodeSigning-TotpPrivateKey)" \
