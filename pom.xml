@@ -14,10 +14,6 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <revision>8.2.0-SNAPSHOT</revision>
-        <signingcertpath>./signingcert.pfx</signingcertpath>
-        <signingcertaliasname>1</signingcertaliasname>
-        <signingkeystorepassword>secret</signingkeystorepassword>
-        <signingcertpassword>secret</signingcertpassword>
         <gpgkeyname>keyname</gpgkeyname>
     </properties>
 
@@ -53,28 +49,6 @@
             <groupId>org.apache.httpcomponents.client5</groupId>
             <artifactId>httpclient5</artifactId>
             <version>5.4.2</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-codec</groupId>
-                    <artifactId>commons-codec</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>commons-codec</groupId>
-            <artifactId>commons-codec</artifactId>
-            <version>1.17.1</version>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.xml.bind</groupId>
-            <artifactId>jakarta.xml.bind-api</artifactId>
-            <version>2.3.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jaxb</groupId>
-            <artifactId>jaxb-runtime</artifactId>
-            <version>2.3.2</version>
-            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -231,31 +205,6 @@
                             </execution>
                         </executions>
                     </plugin>
-                    <!--plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jarsigner-plugin</artifactId>
-                        <version>3.0.0</version>
-                        <executions>
-                            <execution>
-                                <id>sign</id>
-                                <goals>
-                                    <goal>sign</goal>
-                                </goals>
-                            </execution>
-                            <execution>
-                                <id>verify</id>
-                                <goals>
-                                    <goal>verify</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <keystore>${signingcertpath}</keystore>
-                            <alias>${signingcertaliasname}</alias>
-                            <storepass>${signingcertpassword}</storepass>
-                            <keypass>${signingcertpassword}</keypass>
-                        </configuration>
-                    </plugin-->
                 </plugins>
             </build>
         </profile>

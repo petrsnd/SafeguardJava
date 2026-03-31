@@ -1,0 +1,7 @@
+variables:
+- name: version
+  value: '$(semanticVersion).$(Build.BuildId)-SNAPSHOT'
+- name: targetDir
+  value: 'target'
+- name: gpgKeyName
+  value: 'brad.nicholes@oneidentity.com'

@@ -1,0 +1,78 @@
+parameters:
+- name: mavenGoals
+  type: string
+  default: 'package'
+- name: mavenOptions
+  type: string
+  default: '-X --batch-mode --no-transfer-progress -Drevision=$(version)'
+- name: signJars
+  type: boolean
+  default: false
+
+steps:
+- task: Bash@3
+  inputs:
+    targetType: 'inline'
+    script: 'env | sort'
+  displayName: 'Display environment variables'
+
+- task: Maven@4
+  inputs:
+    mavenPomFile: 'pom.xml'
+    mavenOptions: '-Xmx3072m'
+    Options: '${{ parameters.mavenOptions }}'
+    javaHomeOption: 'JDKVersion'
+    jdkVersionOption: '1.8'
+    jdkArchitectureOption: 'x64'
+    publishJUnitResults: true
+    testResultsFiles: '**/surefire-reports/TEST-*.xml'
+    goals: '${{ parameters.mavenGoals }}'
+  displayName: 'Maven ${{ parameters.mavenGoals }} SafeguardJava $(version)'
+
+- ${{ if parameters.signJars }}:
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -e
+        JAR_FILE="safeguardjava-$(version).jar"
+        echo "Signing JAR: $JAR_FILE"
+        docker pull ghcr.io/sslcom/codesigner:latest
+        docker run -i --rm --dns 8.8.8.8 --network host \
+          --volume $(Build.SourcesDirectory)/target:/codesign/examples \
+          -e USERNAME="ssl.oid.safeguardpp@groups.quest.com" \
+          -e PASSWORD="$(SPPCodeSigning-Password)" \
+          -e TOTP_SECRET="$(SPPCodeSigning-TotpPrivateKey)" \
+          -e ENVIRONMENT_NAME="PROD" \
+          ghcr.io/sslcom/codesigner:latest sign \
+          -input_file_path=/codesign/examples/$JAR_FILE \
+          -override
+        echo "Verifying JAR signature..."
+        jarsigner -verify -verbose "$(Build.SourcesDirectory)/target/$JAR_FILE" | head -20
+    displayName: 'Sign JAR with SSL.com CodeSigner Docker image'
+
+- task: CopyFiles@2
+  inputs:
+    sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
+    contents: '*.jar'
+    targetFolder: $(Build.ArtifactStagingDirectory)
+  displayName: 'Copy JAR files to staging folder'
+
+- task: CopyFiles@2
+  inputs:
+    sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
+    contents: '**/lib/**'
+    targetFolder: $(Build.ArtifactStagingDirectory)
+  displayName: 'Copy dependency libs to staging folder'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: '$(Build.ArtifactStagingDirectory)'
+    artifactName: 'SafeguardJava'
+  displayName: 'Publish build artifacts'
+
+- task: Bash@3
+  inputs:
+    targetType: 'inline'
+    script: 'ls -la $(Build.ArtifactStagingDirectory)'
+  displayName: 'List staging directory'
