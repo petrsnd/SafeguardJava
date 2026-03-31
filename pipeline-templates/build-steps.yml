@@ -1,3 +1,14 @@
+parameters:
+- name: mavenGoals
+  type: string
+  default: 'package'
+- name: mavenOptions
+  type: string
+  default: '-Drevision=$(version)'
+- name: signJars
+  type: boolean
+  default: false
+
 steps:
 - task: Bash@3
   inputs:
@@ -9,21 +20,39 @@ steps:
   inputs:
     mavenPomFile: 'pom.xml'
     mavenOptions: '-Xmx3072m'
-    Options: '-X -Drevision=$(version)'
+    Options: '${{ parameters.mavenOptions }}'
     javaHomeOption: 'JDKVersion'
     jdkVersionOption: '1.8'
     jdkArchitectureOption: 'x64'
     publishJUnitResults: true
     testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    goals: 'package'
-  displayName: 'Build and package SafeguardJava $(version)'
+    goals: '${{ parameters.mavenGoals }}'
+  displayName: 'Maven ${{ parameters.mavenGoals }} SafeguardJava $(version)'
+
+- ${{ if parameters.signJars }}:
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -e
+        JAR_FILE="$(Build.SourcesDirectory)/target/safeguardjava-$(version).jar"
+        echo "Signing JAR: $JAR_FILE"
+        $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh sign \
+          -username "ssl.oid.safeguardpp@groups.quest.com" \
+          -password "$(SPPCodeSigning-Password)" \
+          -totp_secret "$(SPPCodeSigning-TotpPrivateKey)" \
+          -input_file_path "$JAR_FILE" \
+          -override
+        echo "Verifying JAR signature..."
+        jarsigner -verify -verbose "$JAR_FILE" | head -20
+    displayName: 'Sign JAR with SSL.com CodeSignTool'
 
 - task: CopyFiles@2
   inputs:
     sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
     contents: '*.jar'
     targetFolder: $(Build.ArtifactStagingDirectory)
-  displayName: 'Copy jar files to staging folder'
+  displayName: 'Copy JAR files to staging folder'
 
 - task: CopyFiles@2
   inputs:
@@ -36,10 +65,10 @@ steps:
   inputs:
     pathToPublish: '$(Build.ArtifactStagingDirectory)'
     artifactName: 'SafeguardJava'
-  displayName: 'Publishing the artifacts'
+  displayName: 'Publish build artifacts'
 
 - task: Bash@3
   inputs:
     targetType: 'inline'
-    script: 'ls $(Build.ArtifactStagingDirectory)'
+    script: 'ls -la $(Build.ArtifactStagingDirectory)'
   displayName: 'List staging directory'

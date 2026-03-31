@@ -3,9 +3,5 @@ variables:
   value: '$(semanticVersion).$(Build.BuildId)-SNAPSHOT'
 - name: targetDir
   value: 'target'
-- name: codeSigningCertFileName
-  value: 'OneIdentityCodeSigning.pfx'
-- name: issuerKeyStorePath
-  value: 'settings/signingstore.jks'
 - name: gpgKeyName
   value: 'brad.nicholes@oneidentity.com'

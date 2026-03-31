@@ -6,18 +6,24 @@ variables:
 
 trigger:
   branches:
-    include: [ master,  release-* ]
+    include: [ master, release-* ]
+  paths:
+    exclude:
+      - README.md
+      - AGENTS.md
 
 pr:
   branches:
-    include:
-      - master
-      - release-*
+    include: [ master, release-* ]
+  paths:
+    exclude:
+      - README.md
+      - AGENTS.md
 
 jobs:
 # Job 1: PR Validation - runs only on pull requests
 - job: PRValidation
-  displayName: 'PR Validation: Build and sign SafeguardJava SDK'
+  displayName: 'PR Validation: Build SafeguardJava SDK'
   condition: eq(variables['Build.Reason'], 'PullRequest')
 
   variables:
@@ -41,6 +47,7 @@ jobs:
     vmImage: 'ubuntu-latest'
 
   steps:
+  # --- Secrets ---
   - task: AzureKeyVault@2
     inputs:
       azureSubscription: 'SafeguardOpenSource'
@@ -50,34 +57,16 @@ jobs:
 
   - task: AzureKeyVault@2
     inputs:
-      azureSubscription: 'Azure.Infrastructure.CodeSigning'
-      KeyVaultName: 'CodeSigningCertificates'
-      SecretsFilter: '*'
-    displayName: 'Get code signing certificate from Azure Key Vault'
+      ConnectedServiceName: 'OneIdentity.Infrastructure.SPPCodeSigning'
+      KeyVaultName: 'SPPCodeSigning'
+      SecretsFilter: 'SPPCodeSigning-Password, SPPCodeSigning-TotpPrivateKey'
+    displayName: 'Get code signing credentials from Azure Key Vault'
 
-  - task: PowerShell@2
-    inputs:
-      targetType: 'inline'
-      script: |
-        $kvSecretBytes = [System.Convert]::FromBase64String("$(OneIdentity-CodeSigning)")
-        $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
-        $certCollection.Import($kvSecretBytes,$null,[System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-        $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12,"$(OneIdentity-CodeSigningCertPassword)")
-        $certpath = '$(Build.BinariesDirectory)/$(codeSigningCertFileName)'
-        Write-Verbose -Verbose $certpath
-        [System.IO.File]::WriteAllBytes($certpath, $protectedCertificateBytes)
-    displayName: 'Save code signing certificate to PFX file'
-
-  - task: Bash@3
-    inputs:
-      targetType: 'inline'
-      script: 'keytool -v -importkeystore -destkeystore $(Build.BinariesDirectory)/$(codeSigningCertFileName) -deststoretype PKCS12 -deststorepass $(OneIdentity-CodeSigningCertPassword) -srckeystore $(Build.SourcesDirectory)/$(issuerKeyStorePath) -srcstoretype PKCS12 -srcstorepass $(SigningStorePassword)'
-    displayName: 'Create the signing keystore'
-
+  # --- GPG setup (for Maven Central signatures) ---
   - script: echo ${SIGNINGGKEY} > $(Build.BinariesDirectory)/signingkey.org
     env:
       SIGNINGGKEY: $(GpgCodeSigningKey)
-    displayName: 'Save signing key'
+    displayName: 'Save GPG signing key'
 
   - task: Bash@3
     inputs:
@@ -86,30 +75,35 @@ jobs:
         export GPG_TTY=$(tty)
         sed 's/\\n/\n/g' $(Build.BinariesDirectory)/signingkey.org > $(Build.BinariesDirectory)/signingkey.asc
         gpg --batch --import $(Build.BinariesDirectory)/signingkey.asc
-    displayName: 'Import the signing key'
+    displayName: 'Import GPG signing key'
 
+  # --- CodeSignTool setup (for JAR signing via SSL.com eSigner) ---
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -e
+        echo "Downloading CodeSignTool for Linux..."
+        curl -sL "https://www.ssl.com/download/codesigntool-for-linux/" -o CodeSignTool.zip
+        mkdir -p $(Build.BinariesDirectory)/CodeSignTool
+        unzip -o CodeSignTool.zip -d $(Build.BinariesDirectory)/CodeSignTool
+        # Handle subdirectory nesting (zip may contain CodeSignTool-vX.Y.Z/ folder)
+        if [ ! -f "$(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh" ]; then
+          mv $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool-v*/* $(Build.BinariesDirectory)/CodeSignTool/ 2>/dev/null || true
+        fi
+        chmod +x $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh
+        echo "CodeSignTool installed:"
+        ls -la $(Build.BinariesDirectory)/CodeSignTool/
+    displayName: 'Download and install CodeSignTool'
+
+  # --- Build, sign, and deploy (single Maven invocation + JAR signing) ---
   - template: pipeline-templates/build-steps.yml
+    parameters:
+      mavenGoals: 'deploy'
+      mavenOptions: '-X --settings $(Build.SourcesDirectory)/settings/settings.xml -P release -Dsonatypeusername=$(SonatypeUserToken) -Dsonatypepassword=$(SonatypeRepositoryPassword) -Drevision=$(version) -Dgpgkeyname=$(gpgKeyName)'
+      signJars: true
 
-  - task: Maven@4
-    inputs:
-      mavenPomFile: 'pom.xml'
-      mavenOptions: '-Xmx3072m'
-      Options: '-X --settings $(Build.SourcesDirectory)/settings/settings.xml -P release -D sonatypeusername=$(SonatypeUserToken) -D sonatypepassword=$(SonatypeRepositoryPassword) -D revision=$(version) -D signingcertpath=$(Build.BinariesDirectory)/$(codeSigningCertFileName) -D signingcertaliasname=1 -D signingcertpassword=$(OneIdentity-CodeSigningCertPassword) -D signingkeystorepassword=$(SigningStorePassword) -D gpgkeyname=$(gpgKeyName)'
-      javaHomeOption: 'JDKVersion'
-      jdkVersionOption: '1.8'
-      jdkArchitectureOption: 'x64'
-      publishJUnitResults: true
-      testResultsFiles: '**/surefire-reports/TEST-*.xml'
-      goals: 'deploy'
-    displayName: 'Deploy SafeguardJava $(version) to Maven Central'
-
-  - task: CopyFiles@2
-    inputs:
-      sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
-      contents: '*.asc'
-      targetFolder: $(Build.ArtifactStagingDirectory)
-    displayName: 'Copy GPG signature files to staging folder'
-
+  # --- Publish to GitHub Packages and create release ---
   - task: Bash@3
     inputs:
       targetType: 'inline'
@@ -122,8 +116,8 @@ jobs:
           -Dsources=target/safeguardjava-$(version)-sources.jar \
           -Djavadoc=target/safeguardjava-$(version)-javadoc.jar \
           -Drevision=$(version) \
-          -D githubusername=OneIdentity \
-          -D githubtoken=$(GitHubPackagesToken) \
+          -Dgithubusername=OneIdentity \
+          -Dgithubtoken=$(GitHubPackagesToken) \
           --settings $(Build.SourcesDirectory)/settings/settings.xml
     displayName: 'Publish to GitHub Packages'
 
@@ -139,14 +133,5 @@ jobs:
       isPreRelease: $(isPrerelease)
       changeLogCompareToRelease: 'lastFullRelease'
       changeLogType: 'commitBased'
-      assets: |
-        $(Build.ArtifactStagingDirectory)/*.jar
-        $(Build.ArtifactStagingDirectory)/*.asc
-    displayName: 'Creating and publishing a release to Github'
-
-  - task: DeleteFiles@1
-    inputs:
-      SourceFolder: '$(Build.BinariesDirectory)'
-      Contents: '$(codeSigningCertFileName)'
-    condition: succeededOrFailed()
-    displayName: 'Delete code signing certificate files'
+      assets: '$(Build.ArtifactStagingDirectory)/*.jar'
+    displayName: 'Create GitHub release'
