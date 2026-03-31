@@ -1,37 +1,387 @@
 package com.oneidentity.safeguard.safeguardclient;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.oneidentity.safeguard.safeguardjava.ISafeguardA2AContext;
 import com.oneidentity.safeguard.safeguardjava.ISafeguardConnection;
 import com.oneidentity.safeguard.safeguardjava.ISafeguardSessionsConnection;
+import com.oneidentity.safeguard.safeguardjava.Safeguard;
+import com.oneidentity.safeguard.safeguardjava.SafeguardForPrivilegedSessions;
+import com.oneidentity.safeguard.safeguardjava.data.FullResponse;
+import com.oneidentity.safeguard.safeguardjava.data.Method;
+import com.oneidentity.safeguard.safeguardjava.data.Service;
 import com.oneidentity.safeguard.safeguardjava.event.ISafeguardEventListener;
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
+import org.apache.hc.core5.http.Header;
+import picocli.CommandLine;
+
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
 
 public class SafeguardJavaClient {
 
+    private static final ObjectMapper mapper = new ObjectMapper();
+
     public static void main(String[] args) {
+
+        if (args.length == 0) {
+            runInteractive();
+            return;
+        }
+
+        ToolOptions opts = new ToolOptions();
+        CommandLine cmd = new CommandLine(opts);
+
+        try {
+            cmd.parseArgs(args);
+        } catch (CommandLine.ParameterException ex) {
+            System.err.println("Error: " + ex.getMessage());
+            cmd.usage(System.err);
+            System.exit(1);
+            return;
+        }
+
+        if (cmd.isUsageHelpRequested()) {
+            cmd.usage(System.out);
+            return;
+        }
+
+        if (opts.interactive) {
+            runInteractive();
+            return;
+        }
+
+        try {
+            if (opts.sps) {
+                handleSpsRequest(opts);
+                System.exit(0);
+                return;
+            }
+
+            ISafeguardConnection connection = createConnection(opts);
+
+            if (opts.resourceOwner != null) {
+                setResourceOwnerGrant(connection, opts.resourceOwner);
+                System.exit(0);
+                return;
+            }
+
+            if (opts.tokenLifetime) {
+                int remaining = connection.getAccessTokenLifetimeRemaining();
+                ObjectNode json = mapper.createObjectNode();
+                json.put("TokenLifetimeRemaining", remaining);
+                System.out.println(mapper.writeValueAsString(json));
+                System.exit(0);
+                return;
+            }
+
+            if (opts.getToken) {
+                char[] token = connection.getAccessToken();
+                ObjectNode json = mapper.createObjectNode();
+                json.put("AccessToken", new String(token));
+                System.out.println(mapper.writeValueAsString(json));
+                System.exit(0);
+                return;
+            }
+
+            if (opts.refreshToken) {
+                connection.refreshAccessToken();
+                int remaining = connection.getAccessTokenLifetimeRemaining();
+                ObjectNode json = mapper.createObjectNode();
+                json.put("TokenLifetimeRemaining", remaining);
+                System.out.println(mapper.writeValueAsString(json));
+                System.exit(0);
+                return;
+            }
+
+            if (opts.logout) {
+                char[] token = connection.getAccessToken();
+                ObjectNode json = mapper.createObjectNode();
+                json.put("AccessToken", new String(token));
+                connection.logOut();
+                json.put("LoggedOut", true);
+                System.out.println(mapper.writeValueAsString(json));
+                System.exit(0);
+                return;
+            }
+
+            Service service = parseService(opts.service);
+            Method method = parseMethod(opts.method);
+            Map<String, String> headers = parseKeyValuePairs(opts.headers);
+            Map<String, String> parameters = parseKeyValuePairs(opts.parameters);
+
+            if (opts.file != null) {
+                String result = handleStreamingRequest(opts, connection, service, method, headers, parameters);
+                System.out.println(result);
+            } else if (opts.full) {
+                FullResponse response = connection.invokeMethodFull(service, method,
+                        opts.relativeUrl, opts.body, parameters, headers, null);
+                ObjectNode json = mapper.createObjectNode();
+                json.put("StatusCode", response.getStatusCode());
+                ArrayNode headersArray = json.putArray("Headers");
+                for (Header h : response.getHeaders()) {
+                    ObjectNode headerObj = mapper.createObjectNode();
+                    headerObj.put("Name", h.getName());
+                    headerObj.put("Value", h.getValue());
+                    headersArray.add(headerObj);
+                }
+                json.put("Body", response.getBody());
+                System.out.println(mapper.writeValueAsString(json));
+            } else {
+                String result = connection.invokeMethod(service, method,
+                        opts.relativeUrl, opts.body, parameters, headers, null);
+                System.out.println(result);
+            }
+
+            System.exit(0);
+        } catch (Exception ex) {
+            System.err.println("Error: " + ex.getMessage());
+            if (opts.verbose) {
+                ex.printStackTrace(System.err);
+            }
+            System.exit(1);
+        }
+    }
+
+    private static String handleStreamingRequest(ToolOptions opts, ISafeguardConnection connection,
+            Service service, Method method, Map<String, String> headers,
+            Map<String, String> parameters) throws Exception {
+        if (method == Method.Post) {
+            byte[] fileContent = Files.readAllBytes(new File(opts.file).toPath());
+            return connection.getStreamingRequest().uploadStream(service, opts.relativeUrl,
+                    fileContent, null, parameters, headers);
+        } else if (method == Method.Get) {
+            File outFile = new File(opts.file);
+            if (outFile.exists()) {
+                throw new IllegalStateException("File exists, remove it first: " + opts.file);
+            }
+            connection.getStreamingRequest().downloadStream(service, opts.relativeUrl,
+                    opts.file, null, parameters, headers);
+            return "Download written to " + opts.file;
+        } else {
+            throw new IllegalArgumentException("Streaming is not supported for HTTP method: " + opts.method);
+        }
+    }
+
+    private static void handleSpsRequest(ToolOptions opts) throws Exception {
+        char[] password = null;
+        if (opts.readPassword) {
+            System.err.print("Password: ");
+            password = new Scanner(System.in).nextLine().toCharArray();
+        }
+
+        System.err.println("Connecting to SPS " + opts.appliance + " as " + opts.username);
+        ISafeguardSessionsConnection spsConnection = SafeguardForPrivilegedSessions.Connect(
+                opts.appliance, opts.username, password, opts.insecure);
+
+        Method method = parseMethod(opts.method);
+
+        if (opts.full) {
+            FullResponse response = spsConnection.invokeMethodFull(method, opts.relativeUrl, opts.body);
+            ObjectNode json = mapper.createObjectNode();
+            json.put("StatusCode", response.getStatusCode());
+            ArrayNode headersArray = json.putArray("Headers");
+            for (Header h : response.getHeaders()) {
+                ObjectNode headerObj = mapper.createObjectNode();
+                headerObj.put("Name", h.getName());
+                headerObj.put("Value", h.getValue());
+                headersArray.add(headerObj);
+            }
+            json.put("Body", response.getBody());
+            System.out.println(mapper.writeValueAsString(json));
+        } else {
+            String result = spsConnection.invokeMethod(method, opts.relativeUrl, opts.body);
+            System.out.println(result);
+        }
+    }
+
+    private static ISafeguardConnection createConnection(ToolOptions opts) throws Exception {
+        char[] password = null;
+        if (opts.readPassword) {
+            System.err.print("Password: ");
+            password = new Scanner(System.in).nextLine().toCharArray();
+        }
+
+        // Resource owner toggle always uses PKCE
+        boolean usePkce = opts.pkce || opts.resourceOwner != null;
+
+        if (opts.username != null) {
+            String provider = opts.identityProvider != null ? opts.identityProvider : "local";
+            if (usePkce) {
+                System.err.println("Connecting to " + opts.appliance + " as " + opts.username + " via " + provider + " (PKCE)");
+                return Safeguard.connectPkce(opts.appliance, provider, opts.username, password, (Integer) null, opts.insecure);
+            } else {
+                System.err.println("Connecting to " + opts.appliance + " as " + opts.username + " via " + provider);
+                return Safeguard.connect(opts.appliance, provider, opts.username, password, null, opts.insecure);
+            }
+        }
+
+        if (opts.certificateFile != null) {
+            System.err.println("Connecting to " + opts.appliance + " with certificate file " + opts.certificateFile);
+            return Safeguard.connect(opts.appliance, opts.certificateFile, password, null, opts.insecure, null);
+        }
+
+        if (opts.thumbprint != null) {
+            System.err.println("Connecting to " + opts.appliance + " with thumbprint " + opts.thumbprint);
+            return Safeguard.connect(opts.appliance, opts.thumbprint, null, opts.insecure);
+        }
+
+        if (opts.accessToken != null) {
+            System.err.println("Connecting to " + opts.appliance + " with access token");
+            return Safeguard.connect(opts.appliance, opts.accessToken.toCharArray(), null, opts.insecure);
+        }
+
+        if (opts.anonymous) {
+            System.err.println("Connecting to " + opts.appliance + " anonymously");
+            return Safeguard.connect(opts.appliance, null, opts.insecure);
+        }
+
+        throw new IllegalArgumentException(
+                "No authentication method specified. Use -u, -c, -t, -k, or -A.");
+    }
+
+    private static Service parseService(String serviceStr) {
+        if (serviceStr == null) {
+            throw new IllegalArgumentException("Service (-s) is required for API invocation");
+        }
+        switch (serviceStr.toLowerCase()) {
+            case "core": return Service.Core;
+            case "appliance": return Service.Appliance;
+            case "notification": return Service.Notification;
+            case "a2a": return Service.A2A;
+            default:
+                throw new IllegalArgumentException("Unknown service: " + serviceStr
+                        + ". Valid values: Core, Appliance, Notification, A2A");
+        }
+    }
+
+    private static Method parseMethod(String methodStr) {
+        if (methodStr == null) {
+            throw new IllegalArgumentException("Method (-m) is required for API invocation");
+        }
+        switch (methodStr.toLowerCase()) {
+            case "get": return Method.Get;
+            case "post": return Method.Post;
+            case "put": return Method.Put;
+            case "delete": return Method.Delete;
+            default:
+                throw new IllegalArgumentException("Unknown method: " + methodStr
+                        + ". Valid values: Get, Post, Put, Delete");
+        }
+    }
+
+    private static Map<String, String> parseKeyValuePairs(String[] pairs) {
+        Map<String, String> map = new HashMap<>();
+        if (pairs == null) {
+            return map;
+        }
+        for (String pair : pairs) {
+            int idx = pair.indexOf('=');
+            if (idx < 0) {
+                throw new IllegalArgumentException("Invalid Key=Value pair: " + pair);
+            }
+            map.put(pair.substring(0, idx), pair.substring(idx + 1));
+        }
+        return map;
+    }
+
+    private static final String GRANT_TYPE_SETTING_NAME = "Allowed OAuth2 Grant Types";
+
+    private static void setResourceOwnerGrant(ISafeguardConnection connection, boolean enable)
+            throws Exception {
+        String settingsJson = connection.invokeMethod(Service.Core, Method.Get, "Settings",
+                null, null, null, null);
+        JsonNode settings = mapper.readTree(settingsJson);
+
+        JsonNode grantSetting = null;
+        if (settings.isArray()) {
+            for (JsonNode node : settings) {
+                JsonNode nameNode = node.get("Name");
+                if (nameNode != null && GRANT_TYPE_SETTING_NAME.equals(nameNode.asText())) {
+                    grantSetting = node;
+                    break;
+                }
+            }
+        }
+        if (grantSetting == null) {
+            throw new RuntimeException("Setting '" + GRANT_TYPE_SETTING_NAME + "' not found");
+        }
+
+        String currentValue = grantSetting.has("Value") && !grantSetting.get("Value").isNull()
+                ? grantSetting.get("Value").asText() : "";
+
+        String[] parts = currentValue.split(",");
+        java.util.List<String> grantTypes = new java.util.ArrayList<>();
+        for (String part : parts) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                grantTypes.add(trimmed);
+            }
+        }
+
+        boolean hasResourceOwner = false;
+        for (String gt : grantTypes) {
+            if (gt.equalsIgnoreCase("ResourceOwner")) {
+                hasResourceOwner = true;
+                break;
+            }
+        }
+
+        if (enable && !hasResourceOwner) {
+            grantTypes.add("ResourceOwner");
+        } else if (!enable && hasResourceOwner) {
+            java.util.Iterator<String> it = grantTypes.iterator();
+            while (it.hasNext()) {
+                if (it.next().equalsIgnoreCase("ResourceOwner")) {
+                    it.remove();
+                }
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < grantTypes.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(grantTypes.get(i));
+        }
+        String newValue = sb.toString();
+
+        ObjectNode body = mapper.createObjectNode();
+        body.put("Value", newValue);
+        connection.invokeMethod(Service.Core, Method.Put,
+                "Settings/" + java.net.URLEncoder.encode(GRANT_TYPE_SETTING_NAME, "UTF-8")
+                        .replace("+", "%20"),
+                mapper.writeValueAsString(body), null, null, null);
+
+        ObjectNode envelope = mapper.createObjectNode();
+        envelope.put("Setting", GRANT_TYPE_SETTING_NAME);
+        envelope.put("PreviousValue", currentValue);
+        envelope.put("NewValue", newValue);
+        envelope.put("ResourceOwnerEnabled", enable);
+        System.out.println(mapper.writeValueAsString(envelope));
+    }
+
+    private static void runInteractive() {
 
         ISafeguardConnection connection = null;
         ISafeguardSessionsConnection sessionConnection = null;
         ISafeguardA2AContext a2aContext = null;
         ISafeguardEventListener eventListener = null;
         ISafeguardEventListener a2aEventListener = null;
-        
+
         boolean done = false;
         SafeguardTests tests = new SafeguardTests();
-        
+
         // Uncomment the lines below to enable console debug logging of the http requests
         //System.setProperty("org.apache.commons.logging.Log","org.apache.commons.logging.impl.SimpleLog");
         //System.setProperty("org.apache.commons.logging.simplelog.showdatetime", "true");
-        //System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.http.wire", "DEBUG");        
+        //System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.http.wire", "DEBUG");
 
         //System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.http.impl.conn", "DEBUG");
         //System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.http.impl.client", "DEBUG");
@@ -160,12 +510,12 @@ public class SafeguardJavaClient {
             System.out.println("/tException Stack: ");
             ex.printStackTrace();
         }
-        
+
         System.out.println("All done.");
     }
 
     private static Integer displayMenu() {
-        
+
         System.out.println("Select an option:");
         System.out.println ("\t1. Connect by user/password");
         System.out.println ("\t2. Connect by thumbprint");
@@ -200,52 +550,14 @@ public class SafeguardJavaClient {
         System.out.println ("\t31. Test Join SPS");
         System.out.println ("\t32. Test Management Interface API");
         System.out.println ("\t33. Test Anonymous Connection");
-        
+
         System.out.println ("\t99. Exit");
-        
+
         System.out.print ("Selection: ");
         Scanner in = new Scanner(System.in);
         int selection = in.nextInt();
-        
+
         return selection;
-    }
-    
-    private static CommandLine parseArguments(String[] args) {
-
-        Options options = getOptions();
-        CommandLine line = null;
-
-        CommandLineParser parser = new DefaultParser();
-
-        try {
-            line = parser.parse(options, args);
-
-        } catch (ParseException ex) {
-
-            System.err.println(ex);
-            printAppHelp();
-
-            System.exit(1);
-        }
-
-        return line;
-    }
-
-    private static Options getOptions() {
-
-        Options options = new Options();
-
-        options.addOption("f", "filename", true,
-                "file name to load data from");
-        return options;
-    }
-
-    private static void printAppHelp() {
-
-        Options options = getOptions();
-
-        HelpFormatter formatter = new HelpFormatter();
-        formatter.printHelp("SafeguardClientCli", options, true);
     }
 
     public static String toJsonString(String name, Object value, boolean prependSep) {
@@ -256,7 +568,7 @@ public class SafeguardJavaClient {
     }
 
     public static String readLine(String format, String defaultStr, Object... args) {
-        
+
         String value = defaultStr;
         format += "["+defaultStr+"] ";
         try {
@@ -271,23 +583,9 @@ public class SafeguardJavaClient {
             System.out.println(ex.getMessage());
             return defaultStr;
         }
-        
+
         if (value.trim().length() == 0)
             return defaultStr;
         return value.trim();
     }
-
-    
-    
-    
-    
-    
 }
-
-//class EventHandler implements ISafeguardEventHandler {
-//
-//    @Override
-//    public void onEventReceived(String eventName, String eventBody) {
-//        System.out.println("Got the event");
-//    }
-//}

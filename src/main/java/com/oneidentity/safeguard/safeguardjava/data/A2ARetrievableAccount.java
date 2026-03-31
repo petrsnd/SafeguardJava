@@ -10,7 +10,6 @@ import java.util.Arrays;
  */
 @JsonIgnoreProperties
 public class A2ARetrievableAccount implements IA2ARetrievableAccount {
-    private boolean disposed;
 
     private String applicationName;
     private String description;
@@ -99,7 +98,7 @@ public class A2ARetrievableAccount implements IA2ARetrievableAccount {
     public void setAssetNetworkAddress(String assetNetworkAddress) {
         this.assetNetworkAddress = assetNetworkAddress;
     }
-    
+
     @Override
     public int getAccountId() {
         return accountId;
@@ -135,7 +134,7 @@ public class A2ARetrievableAccount implements IA2ARetrievableAccount {
     public void setAccountType(String accountType) {
         this.accountType = accountType;
     }
-    
+
     @Override
     public String getAssetDescription() {
         return assetDescription;
@@ -159,10 +158,9 @@ public class A2ARetrievableAccount implements IA2ARetrievableAccount {
         if (apiKey != null) {
             Arrays.fill(apiKey, '0');
         }
-        disposed = true;
         apiKey = null;
     }
-    
+
     @Override
     protected void finalize() throws Throwable {
         try {
@@ -170,7 +168,6 @@ public class A2ARetrievableAccount implements IA2ARetrievableAccount {
                 Arrays.fill(apiKey, '0');
             }
         } finally {
-            disposed = true;
             super.finalize();
         }
     }

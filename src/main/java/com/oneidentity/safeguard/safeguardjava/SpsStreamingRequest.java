@@ -11,10 +11,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Map;
-import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class SpsStreamingRequest implements ISpsStreamingRequest {
 
+    private static final Logger logger = LoggerFactory.getLogger(SpsStreamingRequest.class);
     private final Integer DefaultBufferSize = 81920;
     private RestClient client;
 
@@ -46,20 +49,20 @@ class SpsStreamingRequest implements ISpsStreamingRequest {
 
         String reply = Utils.getResponse(response);
 
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             throw new SafeguardForJavaException("Error returned from SPS API, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
-        FullResponse fullResponse = new FullResponse(response.getStatusLine().getStatusCode(), response.getAllHeaders(), reply);
+        FullResponse fullResponse = new FullResponse(response.getCode(), response.getHeaders(), reply);
 
         SafeguardConnection.logResponseDetails(fullResponse);
 
         return fullResponse.getBody();
     }
-    
+
     @Override
-    public String uploadStream(String relativeUrl, String fileName, 
+    public String uploadStream(String relativeUrl, String fileName,
             Map<String, String> parameters, Map<String, String> additionalHeaders)
             throws SafeguardForJavaException, ArgumentException {
 
@@ -82,23 +85,23 @@ class SpsStreamingRequest implements ISpsStreamingRequest {
 
         String reply = Utils.getResponse(response);
 
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             throw new SafeguardForJavaException("Error returned from SPS API, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
-        FullResponse fullResponse = new FullResponse(response.getStatusLine().getStatusCode(), response.getAllHeaders(), reply);
+        FullResponse fullResponse = new FullResponse(response.getCode(), response.getHeaders(), reply);
 
         SafeguardConnection.logResponseDetails(fullResponse);
 
         return fullResponse.getBody();
     }
-    
-    
+
+
     @Override
-    public StreamResponse downloadStream(String relativeUrl, Map<String, String> parameters, Map<String, String> additionalHeaders) 
+    public StreamResponse downloadStream(String relativeUrl, Map<String, String> parameters, Map<String, String> additionalHeaders)
             throws SafeguardForJavaException, ArgumentException {
-        
+
         if (Utils.isNullOrEmpty(relativeUrl)) {
             throw new ArgumentException("Parameter relativeUrl cannot be null or empty");
         }
@@ -116,23 +119,23 @@ class SpsStreamingRequest implements ISpsStreamingRequest {
             throw new SafeguardForJavaException(String.format("Unable to connect to SPS service %s", client.getBaseURL()));
         }
 
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             String reply = Utils.getResponse(response);
             throw new SafeguardForJavaException("Error returned from SPS API, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
-        FullResponse fullResponse = new FullResponse(response.getStatusLine().getStatusCode(), response.getAllHeaders(), null);
+        FullResponse fullResponse = new FullResponse(response.getCode(), response.getHeaders(), null);
         SafeguardConnection.logResponseDetails(fullResponse);
 
         return new StreamResponse(response);
     }
-    
+
     @Override
-    public void downloadStream(String relativeUrl, String outputFilePath, IProgressCallback progressCallback, 
+    public void downloadStream(String relativeUrl, String outputFilePath, IProgressCallback progressCallback,
             Map<String, String> parameters, Map<String, String> additionalHeaders)
             throws SafeguardForJavaException, ArgumentException {
-        
+
         StreamResponse streamResponse = null;
         InputStream input = null;
         OutputStream output = null;
@@ -149,7 +152,7 @@ class SpsStreamingRequest implements ISpsStreamingRequest {
         } catch (Exception ex) {
             throw new SafeguardForJavaException(String.format("Unable to download %s", outputFilePath), ex);
         } finally {
-            if (output != null) try { output.close(); } catch (IOException logOrIgnore) {}
+            if (output != null) try { output.close(); } catch (IOException ex) { logger.debug("Error closing output stream", ex); }
             if (streamResponse != null) streamResponse.dispose();
         }
     }

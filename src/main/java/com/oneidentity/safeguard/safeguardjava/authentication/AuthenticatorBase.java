@@ -14,13 +14,15 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import javax.net.ssl.HostnameVerifier;
-import org.apache.http.HttpHeaders;
-import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.hc.core5.http.HttpHeaders;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 
 abstract class AuthenticatorBase implements IAuthenticationMechanism {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthenticatorBase.class);
 
     private boolean disposed;
 
@@ -115,7 +117,7 @@ abstract class AuthenticatorBase implements IAuthenticationMechanism {
         if (response == null) {
             throw new SafeguardForJavaException(String.format("Unable to connect to web service %s", coreClient.getBaseURL()));
         }
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             return 0;
         }
 
@@ -151,9 +153,9 @@ abstract class AuthenticatorBase implements IAuthenticationMechanism {
         }
 
         String reply = Utils.getResponse(response);
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             throw new SafeguardForJavaException("Error exchanging RSTS token from " + this.getId() + "authenticator for Safeguard API access token, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
         Map<String, String> map = Utils.parseResponse(reply);
@@ -161,27 +163,27 @@ abstract class AuthenticatorBase implements IAuthenticationMechanism {
             accessToken = map.get("UserToken").toCharArray();
         }
     }
-    
+
     public String resolveProviderToScope(String provider) throws SafeguardForJavaException
     {
         try
         {
             CloseableHttpResponse response;
             Map<String,String> headers = new HashMap<>();
-            
+
             headers.clear();
             headers.put(HttpHeaders.ACCEPT, "application/json");
-        
+
             response = coreClient.execGET("AuthenticationProviders", null, headers, null);
-                        
+
             if (response == null)
                 throw new SafeguardForJavaException("Unable to connect to RSTS to find identity provider scopes");
-            
+
             String reply = Utils.getResponse(response);
-            if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) 
+            if (!Utils.isSuccessful(response.getCode()))
                 throw new SafeguardForJavaException("Error requesting identity provider scopes from RSTS, Error: " +
-                        String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
-            
+                        String.format("%d %s", response.getCode(), reply));
+
             List<Provider> knownScopes = parseLoginResponse(reply);
 
             // 3 step check for determining if the user provided scope is valid:
@@ -205,7 +207,7 @@ abstract class AuthenticatorBase implements IAuthenticationMechanism {
                 });
                 throw new SafeguardForJavaException(String.format("Unable to find scope matching '%s' in [%s]", provider, s.toString()));
             }
-            
+
             return scope;
         }
         catch (SafeguardForJavaException ex) {
@@ -239,7 +241,7 @@ abstract class AuthenticatorBase implements IAuthenticationMechanism {
             super.finalize();
         }
     }
-    
+
     private class Provider {
         private String RstsProviderId;
         private String Name;
@@ -251,28 +253,28 @@ abstract class AuthenticatorBase implements IAuthenticationMechanism {
             this.RstsProviderScope = RstsProviderScope;
         }
     }
-    
+
     private List<Provider> parseLoginResponse(String response) {
-        
+
         List<Provider> providers = new ArrayList<>();
         ObjectMapper mapper = new ObjectMapper();
-        
+
         try {
             JsonNode jsonNodeProviders = mapper.readTree(response);
             Iterator<JsonNode> iter = jsonNodeProviders.elements();
-            
+
             while(iter.hasNext()){
 		JsonNode providerNode=iter.next();
                 Provider p = new Provider(getJsonValue(providerNode, "RstsProviderId"), getJsonValue(providerNode, "Name"), getJsonValue(providerNode, "RstsProviderScope"));
 		providers.add(p);
-            }            
+            }
         } catch (IOException ex) {
-            Logger.getLogger(Utils.class.getName()).log(Level.SEVERE, null, ex);
+            logger.error("Exception occurred", ex);
         }
 
         return providers;
     }
-    
+
     private String getMatchingScope(String provider, List<Provider> providers) {
         for (Provider s : providers) {
             if (s.Name.equalsIgnoreCase(provider) || s.RstsProviderId.equalsIgnoreCase(provider))
@@ -280,7 +282,7 @@ abstract class AuthenticatorBase implements IAuthenticationMechanism {
         }
         return null;
     }
-    
+
     private String getJsonValue(JsonNode node, String propName) {
         if (node.get(propName) != null) {
             return node.get(propName).asText();

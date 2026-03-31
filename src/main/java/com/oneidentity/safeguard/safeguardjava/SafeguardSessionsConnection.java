@@ -9,18 +9,19 @@ import com.oneidentity.safeguard.safeguardjava.exceptions.ArgumentException;
 import com.oneidentity.safeguard.safeguardjava.exceptions.ObjectDisposedException;
 import com.oneidentity.safeguard.safeguardjava.exceptions.SafeguardForJavaException;
 import com.oneidentity.safeguard.safeguardjava.restclient.RestClient;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import javax.net.ssl.HostnameVerifier;
-import org.apache.http.Header;
-import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 
 /**
  * This is the reusable connection interface that can be used to call SPS API.
  */
 class SafeguardSessionsConnection implements ISafeguardSessionsConnection {
+
+    private static final Logger logger = LoggerFactory.getLogger(SafeguardSessionsConnection.class);
 
     private boolean disposed;
 
@@ -33,9 +34,7 @@ class SafeguardSessionsConnection implements ISafeguardSessionsConnection {
         String spsApiUrl = String.format("https://%s/api", networkAddress);
         client = new RestClient(spsApiUrl, username, password, ignoreSsl, validationCallback);
 
-        Map<String, String> headers = new HashMap<>();
-
-        Logger.getLogger(SafeguardSessionsConnection.class.getName()).log(Level.FINEST, "Starting authentication.");
+        logger.trace("Starting authentication.");
         logRequestDetails(Method.Get, client.getBaseURL() + "/" + "authentication", null, null);
 
         CloseableHttpResponse response = client.execGET("authentication", null, null, null);
@@ -46,9 +45,9 @@ class SafeguardSessionsConnection implements ISafeguardSessionsConnection {
 
         String reply = Utils.getResponse(response);
 
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             throw new SafeguardForJavaException("Error returned from Safeguard API, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
         Header authCookie = response.getFirstHeader("Set-Cookie");
@@ -56,7 +55,7 @@ class SafeguardSessionsConnection implements ISafeguardSessionsConnection {
             client.addSessionId(authCookie.getValue());
         }
 
-        Logger.getLogger(SafeguardSessionsConnection.class.getName()).log(Level.FINEST, String.format("Response content: $s", reply));
+        logger.trace(String.format("Response content: $s", reply));
     }
 
     @Override
@@ -91,7 +90,7 @@ class SafeguardSessionsConnection implements ISafeguardSessionsConnection {
             throw new ArgumentException("Parameter relativeUrl may not be null or empty");
         }
 
-        Logger.getLogger(SafeguardSessionsConnection.class.getName()).log(Level.FINEST, String.format("Invoking method on sps: $s", relativeUrl));
+        logger.trace(String.format("Invoking method on sps: $s", relativeUrl));
 
         CloseableHttpResponse response = null;
 
@@ -118,14 +117,14 @@ class SafeguardSessionsConnection implements ISafeguardSessionsConnection {
 
         String reply = Utils.getResponse(response);
 
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             throw new SafeguardForJavaException("Error returned from Safeguard API, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
-        Logger.getLogger(SafeguardSessionsConnection.class.getName()).log(Level.FINEST, String.format("Invoking method finished: $s", reply));
+        logger.trace(String.format("Invoking method finished: $s", reply));
 
-        FullResponse fullResponse = new FullResponse(response.getStatusLine().getStatusCode(), response.getAllHeaders(), reply);
+        FullResponse fullResponse = new FullResponse(response.getCode(), response.getHeaders(), reply);
 
         logResponseDetails(fullResponse);
 

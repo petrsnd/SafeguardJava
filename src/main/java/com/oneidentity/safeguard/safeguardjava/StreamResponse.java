@@ -3,9 +3,9 @@ package com.oneidentity.safeguard.safeguardjava;
 import com.oneidentity.safeguard.safeguardjava.exceptions.SafeguardForJavaException;
 import java.io.IOException;
 import java.io.InputStream;
-import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 
-/** 
+/**
  * Represents a streamed response
  */
 public class StreamResponse {
@@ -48,13 +48,13 @@ public class StreamResponse {
         }
         return contentLength;
     }
-    
+
     public void dispose() {
         if (!disposed) {
             disposed = true;
             if (stream != null) {
-                try { 
-                    stream.close(); 
+                try {
+                    stream.close();
                 } catch (IOException logOrIgnore) {}
             }
         }

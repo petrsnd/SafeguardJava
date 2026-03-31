@@ -2,14 +2,14 @@ package com.oneidentity.safeguard.safeguardjava.data;
 
 import java.util.Arrays;
 import java.util.List;
-import org.apache.http.Header;
+import org.apache.hc.core5.http.Header;
 
 
 /**
  * A simple class for returning extended information from a Safeguard API method call.
  */
 public class FullResponse {
-    
+
     private int statusCode;
     private Header[] headers;
     private String body;
@@ -43,5 +43,5 @@ public class FullResponse {
     public void setBody(String body) {
         this.body = body;
     }
-    
+
 }

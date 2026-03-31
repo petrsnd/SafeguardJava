@@ -13,11 +13,14 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.Map;
-import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 
 class StreamingRequest implements IStreamingRequest {
 
+    private static final Logger logger = LoggerFactory.getLogger(StreamingRequest.class);
     private final Integer DefaultBufferSize = 81920;
     private final SafeguardConnection safeguardConnection;
     private final IAuthenticationMechanism authenticationMechanism;
@@ -31,7 +34,7 @@ class StreamingRequest implements IStreamingRequest {
     @Override
     public String uploadStream(Service service, String relativeUrl, byte[] stream, IProgressCallback progressCallback, Map<String, String> parameters, Map<String, String> additionalHeaders)
             throws SafeguardForJavaException, ArgumentException, ObjectDisposedException {
-        
+
         if (safeguardConnection.isDisposed())
             throw new ObjectDisposedException("SafeguardConnection");
         if (Utils.isNullOrEmpty(relativeUrl))
@@ -41,10 +44,10 @@ class StreamingRequest implements IStreamingRequest {
         if (!authenticationMechanism.isAnonymous() && !authenticationMechanism.hasAccessToken()) {
             throw new SafeguardForJavaException("Access token is missing due to log out, you must refresh the access token to invoke a method");
         }
-        
+
         Map<String,String> headers = safeguardConnection.prepareHeaders(additionalHeaders, service);
         CloseableHttpResponse response = null;
-        
+
         SafeguardConnection.logRequestDetails(Method.Post, client.getBaseURL() + "/" + relativeUrl, parameters, additionalHeaders);
 
         response = client.execPOSTBytes(relativeUrl, parameters, headers, null, stream, progressCallback);
@@ -55,12 +58,12 @@ class StreamingRequest implements IStreamingRequest {
 
         String reply = Utils.getResponse(response);
 
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             throw new SafeguardForJavaException("Error returned from Safeguard API, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
-        FullResponse fullResponse = new FullResponse(response.getStatusLine().getStatusCode(), response.getAllHeaders(), reply);
+        FullResponse fullResponse = new FullResponse(response.getCode(), response.getHeaders(), reply);
 
         SafeguardConnection.logResponseDetails(fullResponse);
 
@@ -70,7 +73,7 @@ class StreamingRequest implements IStreamingRequest {
     @Override
     public void downloadStream(Service service, String relativeUrl, String outputFilePath, IProgressCallback progressCallback, Map<String, String> parameters, Map<String, String> additionalHeaders)
             throws SafeguardForJavaException, ArgumentException, ObjectDisposedException {
-        
+
         if (safeguardConnection.isDisposed())
             throw new ObjectDisposedException("SafeguardConnection");
         if (Utils.isNullOrEmpty(relativeUrl))
@@ -80,9 +83,9 @@ class StreamingRequest implements IStreamingRequest {
         if (!authenticationMechanism.isAnonymous() && !authenticationMechanism.hasAccessToken()) {
             throw new SafeguardForJavaException("Access token is missing due to log out, you must refresh the access token to invoke a method");
         }
-        
+
         Map<String,String> headers = safeguardConnection.prepareHeaders(additionalHeaders, service);
-        
+
         SafeguardConnection.logRequestDetails(Method.Get, client.getBaseURL() + "/" + relativeUrl, parameters, additionalHeaders);
 
         CloseableHttpResponse response = client.execGETBytes(relativeUrl, parameters, headers, null, progressCallback);
@@ -91,10 +94,10 @@ class StreamingRequest implements IStreamingRequest {
             throw new SafeguardForJavaException(String.format("Unable to connect to web service %s", client.getBaseURL()));
         }
 
-        if (!Utils.isSuccessful(response.getStatusLine().getStatusCode())) {
+        if (!Utils.isSuccessful(response.getCode())) {
             String reply = Utils.getResponse(response);
             throw new SafeguardForJavaException("Error returned from Safeguard API, Error: "
-                    + String.format("%d %s", response.getStatusLine().getStatusCode(), reply));
+                    + String.format("%d %s", response.getCode(), reply));
         }
 
         InputStream input = null;
@@ -111,11 +114,11 @@ class StreamingRequest implements IStreamingRequest {
         } catch (Exception ex) {
             throw new SafeguardForJavaException(String.format("Unable to download %s", outputFilePath), ex);
         } finally {
-            if (output != null) try { output.close(); } catch (IOException logOrIgnore) {}
-            if (input != null) try { input.close(); } catch (IOException logOrIgnore) {}
+            if (output != null) try { output.close(); } catch (IOException ex) { logger.debug("Error closing output stream", ex); }
+            if (input != null) try { input.close(); } catch (IOException ex) { logger.debug("Error closing input stream", ex); }
         }
-        
-        FullResponse fullResponse = new FullResponse(response.getStatusLine().getStatusCode(), response.getAllHeaders(), null);
+
+        FullResponse fullResponse = new FullResponse(response.getCode(), response.getHeaders(), null);
 
         SafeguardConnection.logResponseDetails(fullResponse);
     }

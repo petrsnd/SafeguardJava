@@ -24,8 +24,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
@@ -46,6 +46,8 @@ class DefaultDisconnectHandler implements IDisconnectHandler {
 }
 
 public class SafeguardEventListener implements ISafeguardEventListener, AutoCloseable {
+
+    private static final Logger logger = LoggerFactory.getLogger(SafeguardEventListener.class);
 
     private boolean disposed;
 
@@ -83,7 +85,7 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
         this.accessToken = accessToken.clone();
     }
 
-    public SafeguardEventListener(String eventUrl, String clientCertificatePath, char[] certificatePassword, 
+    public SafeguardEventListener(String eventUrl, String clientCertificatePath, char[] certificatePassword,
             String certificateAlias, char[] apiKey, boolean ignoreSsl, HostnameVerifier validationCallback) throws ArgumentException {
         this(eventUrl, ignoreSsl, validationCallback);
         if (apiKey == null)
@@ -92,7 +94,7 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
         this.clientCertificate = new CertificateContext(certificateAlias, clientCertificatePath, null, certificatePassword);
     }
 
-    public SafeguardEventListener(String eventUrl, CertificateContext clientCertificate, 
+    public SafeguardEventListener(String eventUrl, CertificateContext clientCertificate,
             char[] apiKey, boolean ignoreSsl, HostnameVerifier validationCallback) throws ArgumentException {
         this(eventUrl, ignoreSsl, validationCallback);
         if (apiKey == null)
@@ -101,7 +103,7 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
         this.apiKey = apiKey.clone();
     }
 
-    public SafeguardEventListener(String eventUrl, String clientCertificatePath, char[] certificatePassword, 
+    public SafeguardEventListener(String eventUrl, String clientCertificatePath, char[] certificatePassword,
             String certificateAlias, List<char[]> apiKeys, boolean ignoreSsl, HostnameVerifier validationCallback) throws ArgumentException {
         this(eventUrl, ignoreSsl, validationCallback);
         if (apiKeys == null)
@@ -115,7 +117,7 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
             throw new ArgumentException("The apiKeys parameter must include at least one item");
     }
 
-    public SafeguardEventListener(String eventUrl, CertificateContext clientCertificate, 
+    public SafeguardEventListener(String eventUrl, CertificateContext clientCertificate,
             List<char[]> apiKeys, boolean ignoreSsl, HostnameVerifier validationCallback) throws ArgumentException
     {
         this(eventUrl, ignoreSsl, validationCallback);
@@ -152,7 +154,7 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
         }
         eventHandlerRegistry.registerEventHandler(eventName, handler);
     }
-    
+
     @Override
     public void SetEventListenerStateCallback(ISafeguardEventListenerStateCallback eventListenerStateCallback)
     {
@@ -182,11 +184,11 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
             public void invoke(Exception exception){
                 try {
                     if(exception != null) {
-                        Logger.getLogger(SafeguardEventListener.class.getName()).log(Level.WARNING, "SignalR error detected!", exception);
+                        logger.warn("SignalR error detected!", exception);
                     }
                     handleDisconnect();
                 } catch (SafeguardEventListenerDisconnectedException ex) {
-                    Logger.getLogger(SafeguardEventListener.class.getName()).log(Level.SEVERE, null, ex);
+                    logger.error("Exception occurred", ex);
                 }
             }
         });
@@ -261,11 +263,11 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
         if(!this.isStarted()) {
             return;
         }
-        Logger.getLogger(EventHandlerRegistry.class.getName()).log(Level.WARNING, "SignalR disconnect detected, calling handler...");
+        logger.warn("SignalR disconnect detected, calling handler...");
         CallEventListenerStateCallback(SafeguardEventListenerState.Disconnected);
         disconnectHandler.func();
     }
-    
+
     private void CallEventListenerStateCallback(SafeguardEventListenerState newState)
     {
         if (eventListenerStateCallback != null) {
@@ -301,15 +303,20 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
             if (apiKey != null)
                 authKey = new String(apiKey);
             else if (apiKeys != null) {
-                for (char[] key : apiKeys)
-                    authKey += new String(key) + " ";
-                authKey = authKey.trim();
+                StringBuilder authKeyBuilder = new StringBuilder();
+                for (char[] key : apiKeys) {
+                    if (authKeyBuilder.length() > 0) {
+                        authKeyBuilder.append(' ');
+                    }
+                    authKeyBuilder.append(key);
+                }
+                authKey = authKeyBuilder.toString();
             }
 
             if (authKey.isEmpty())
                 throw new SafeguardForJavaException("No API keys found in the authorization header");
 
-            builder.withHeader("Authorization", String.format("A2A %s", authKey));            
+            builder.withHeader("Authorization", String.format("A2A %s", authKey));
         }
 
         builder.setHttpClientBuilderCallback(new Action1<Builder>(){
@@ -330,30 +337,29 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
         }
 
         KeyManager[] km = null;
-        if(clientCertificate != null && 
+        if(clientCertificate != null &&
                 (clientCertificate.getCertificateData() != null || clientCertificate.getCertificatePath() != null)){
-            
+
             // If we have a client certificate, set it into the KeyStore/KeyManager
             try{
                 KeyStore keyStore = KeyStore.getInstance("PKCS12");
-                InputStream inputStream = clientCertificate.getCertificatePath() != null ? new FileInputStream(clientCertificate.getCertificatePath()) 
-                            : new ByteArrayInputStream(clientCertificate.getCertificateData());
-
-                keyStore.load(inputStream, clientCertificate.getCertificatePassword());
+                try (InputStream inputStream = clientCertificate.getCertificatePath() != null ? new FileInputStream(clientCertificate.getCertificatePath())
+                            : new ByteArrayInputStream(clientCertificate.getCertificateData())) {
+                    keyStore.load(inputStream, clientCertificate.getCertificatePassword());
+                }
 
                 KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
                 keyManagerFactory.init(keyStore, clientCertificate.getCertificatePassword());
                 km = keyManagerFactory.getKeyManagers();
 
                 // when we send a client certificate singlar resets the stream
-                // and requires 1.1. No idea why. okhttp3 doesn't handle this reset 
+                // and requires 1.1. No idea why. okhttp3 doesn't handle this reset
                 // automatically so the only option is to restrict the client to 1.1
                 builder.protocols(Arrays.asList(Protocol.HTTP_1_1));
             }
             catch(Exception error)
             {
-                String msg = String.format("Error setting client authentication certificate: %s", error.getMessage());
-                Logger.getLogger(SafeguardEventListener.class.getName()).log(Level.SEVERE, msg);
+                logger.error("Error setting client authentication certificate: {}", error.getMessage());
             }
         }
 
@@ -373,23 +379,23 @@ public class SafeguardEventListener implements ISafeguardEventListener, AutoClos
                 if (tm.length != 1 || !(tm[0] instanceof X509TrustManager)) {
                     throw new IllegalStateException("Unexpected default trust managers:" + Arrays.toString(tm));
                 }
-                x509tm = (X509TrustManager) tm[0];        
+                x509tm = (X509TrustManager) tm[0];
             }
 
-            // Configure the SSL Context according to options and set the 
+            // Configure the SSL Context according to options and set the
             // OkHttpClient builder SSL socket factory
             SSLContext sslContext = SSLContext.getInstance("TLS");
             sslContext.init(km, tm, null);
-            builder.sslSocketFactory(sslContext.getSocketFactory(), x509tm);        
+            builder.sslSocketFactory(sslContext.getSocketFactory(), x509tm);
         }
         catch(NoSuchAlgorithmException ex) {
-            Logger.getLogger(SafeguardEventListener.class.getName()).log(Level.SEVERE, ex.getMessage());
+            logger.error(ex.getMessage());
         }
         catch(KeyManagementException ex){
-            Logger.getLogger(SafeguardEventListener.class.getName()).log(Level.SEVERE, ex.getMessage());
+            logger.error(ex.getMessage());
         }
         catch(KeyStoreException ex){
-            Logger.getLogger(SafeguardEventListener.class.getName()).log(Level.SEVERE, ex.getMessage());
+            logger.error(ex.getMessage());
         }
     }
 
