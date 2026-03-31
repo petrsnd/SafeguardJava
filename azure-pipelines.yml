@@ -100,7 +100,7 @@ jobs:
   - template: pipeline-templates/build-steps.yml
     parameters:
       mavenGoals: 'deploy'
-      mavenOptions: '-X --settings $(Build.SourcesDirectory)/settings/settings.xml -P release -Dsonatypeusername=$(SonatypeUserToken) -Dsonatypepassword=$(SonatypeRepositoryPassword) -Drevision=$(version) -Dgpgkeyname=$(gpgKeyName)'
+      mavenOptions: '-X --batch-mode --no-transfer-progress --settings $(Build.SourcesDirectory)/settings/settings.xml -P release -Dsonatypeusername=$(SonatypeUserToken) -Dsonatypepassword=$(SonatypeRepositoryPassword) -Drevision=$(version) -Dgpgkeyname=$(gpgKeyName)'
       signJars: true
 
   # --- Publish to GitHub Packages and create release ---

@@ -4,7 +4,7 @@ parameters:
   default: 'package'
 - name: mavenOptions
   type: string
-  default: '-Drevision=$(version)'
+  default: '-X --batch-mode --no-transfer-progress -Drevision=$(version)'
 - name: signJars
   type: boolean
   default: false
