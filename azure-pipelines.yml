@@ -29,7 +29,7 @@ steps:
 
 - task: AzureKeyVault@2
   inputs:
-    azureSubscription: 'OneIdentity.RD.SBox.Safeguard-ServiceConnection'
+    azureSubscription: 'SafeguardOpenSource'
     keyVaultName: 'SafeguardBuildSecrets'
     secretsFilter: '*'
   displayName: 'Get Sonatype Central Portal credentials from Azure Key Vault'
