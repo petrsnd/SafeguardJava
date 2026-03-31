@@ -33,7 +33,8 @@ steps:
     keyVaultName: 'SafeguardBuildSecrets'
     secretsFilter: '*'
   displayName: 'Get Sonatype Central Portal credentials from Azure Key Vault'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  # TODO: restore condition to release branch only after pipeline is fixed
+  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
 - task: AzureKeyVault@2
   inputs:
@@ -41,7 +42,8 @@ steps:
     KeyVaultName: 'CodeSigningCertificates'
     SecretsFilter: '*'
   displayName: 'Get code signing certificate from Azure Key Vault'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  # TODO: restore condition to release branch only after pipeline is fixed
+  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
 - task: PowerShell@2
   inputs:
@@ -55,20 +57,23 @@ steps:
       Write-Verbose -Verbose $certpath
       [System.IO.File]::WriteAllBytes($certpath, $protectedCertificateBytes)
   displayName: 'Save code signing certificate to PFX file'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  # TODO: restore condition to release branch only after pipeline is fixed
+  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
 - task: Bash@3
   inputs:
     targetType: 'inline'
     script: 'keytool -v -importkeystore -destkeystore $(Build.BinariesDirectory)/$(codeSigningCertFileName) -deststoretype PKCS12 -deststorepass $(OneIdentity-CodeSigningCertPassword) -srckeystore $(Build.SourcesDirectory)/$(issuerKeyStorePath) -srcstoretype PKCS12 -srcstorepass $(SigningStorePassword)'
   displayName: 'Create the signing keystore'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  # TODO: restore condition to release branch only after pipeline is fixed
+  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
 - script: echo ${SIGNINGGKEY} > $(Build.BinariesDirectory)/signingkey.org
   env:
     SIGNINGGKEY: $(GpgCodeSigningKey)
   displayName: 'Save signing key'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  # TODO: restore condition to release branch only after pipeline is fixed
+  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
 - task: Bash@3
   inputs:
@@ -78,7 +83,8 @@ steps:
       sed 's/\\n/\n/g' $(Build.BinariesDirectory)/signingkey.org > $(Build.BinariesDirectory)/signingkey.asc
       gpg --batch --import $(Build.BinariesDirectory)/signingkey.asc
   displayName: 'Import the signing key'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  # TODO: restore condition to release branch only after pipeline is fixed
+  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
 - task: Maven@4
   inputs:
@@ -92,7 +98,8 @@ steps:
     testResultsFiles: '**/surefire-reports/TEST-*.xml'
     goals: 'package'
   displayName: 'Build and package SafeguardJava $(version)'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, false))
+  # TODO: restore condition after pipeline is fixed (temporarily disabled, release profile build below covers this)
+  condition: and(succeeded(), false)
 
 - task: Maven@4
   inputs:
@@ -104,9 +111,11 @@ steps:
     jdkArchitectureOption: 'x64'
     publishJUnitResults: true
     testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    goals: 'deploy'
-  displayName: 'Build and deploy SafeguardJava $(version) to Maven Central'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+    # TODO: restore to 'deploy' after pipeline is fixed
+    goals: 'package'
+  displayName: 'Build and package SafeguardJava $(version) with release profile'
+  # TODO: restore condition to release branch only after pipeline is fixed
+  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
 
 - task: Bash@3
   inputs:
