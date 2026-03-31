@@ -33,24 +33,23 @@ steps:
   - task: Bash@3
     inputs:
       targetType: 'inline'
-      workingDirectory: '$(Build.BinariesDirectory)/CodeSignTool'
       script: |
         set -e
-        # CodeSignTool requires Java 8 (fails with Java 17+ due to JPMS module access restrictions)
-        export JAVA_HOME="$JAVA_HOME_8_X64"
-        export PATH="$JAVA_HOME/bin:$PATH"
-        echo "Using Java: $(java -version 2>&1 | head -1)"
-        JAR_FILE="$(Build.SourcesDirectory)/target/safeguardjava-$(version).jar"
+        JAR_FILE="safeguardjava-$(version).jar"
         echo "Signing JAR: $JAR_FILE"
-        ./CodeSignTool.sh sign \
-          -username "ssl.oid.safeguardpp@groups.quest.com" \
-          -password "$(SPPCodeSigning-Password)" \
-          -totp_secret "$(SPPCodeSigning-TotpPrivateKey)" \
-          -input_file_path "$JAR_FILE" \
+        docker pull ghcr.io/sslcom/codesigner:latest
+        docker run -i --rm --dns 8.8.8.8 --network host \
+          --volume $(Build.SourcesDirectory)/target:/codesign/examples \
+          -e USERNAME="ssl.oid.safeguardpp@groups.quest.com" \
+          -e PASSWORD="$(SPPCodeSigning-Password)" \
+          -e TOTP_SECRET="$(SPPCodeSigning-TotpPrivateKey)" \
+          -e ENVIRONMENT_NAME="PROD" \
+          ghcr.io/sslcom/codesigner:latest sign \
+          -input_file_path=/codesign/examples/$JAR_FILE \
           -override
         echo "Verifying JAR signature..."
-        jarsigner -verify -verbose "$JAR_FILE" | head -20
-    displayName: 'Sign JAR with SSL.com CodeSignTool'
+        jarsigner -verify -verbose "$(Build.SourcesDirectory)/target/$JAR_FILE" | head -20
+    displayName: 'Sign JAR with SSL.com CodeSigner Docker image'
 
 - task: CopyFiles@2
   inputs:
