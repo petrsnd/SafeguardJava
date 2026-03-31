@@ -1,194 +1,145 @@
-# Maven
-# Build your Java project and run tests with Apache Maven.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/java
+# SafeguardJava CI/CD Pipeline
+# Build, sign, and publish the SafeguardJava SDK to Maven Central and GitHub Packages.
+
+variables:
+- template: pipeline-templates/global-variables.yml
 
 trigger:
   branches:
     include: [ master,  release-* ]
 
-pool:
-  vmImage: 'ubuntu-latest'
+pr:
+  branches:
+    include:
+      - master
+      - release-*
 
-# Maven Build Variables:
-variables:
-  version: '8.2.0.$(Build.BuildId)-SNAPSHOT'
-  targetDir: 'target'
-  codeSigningCertFileName: 'OneIdentityCodeSigning.pfx'
-  issuerKeyStorePath: 'settings/signingstore.jks'
-  gpgKeyName: 'brad.nicholes@oneidentity.com'
-  isPrerelease: ${{ true }}
-  isReleaseBranch: $[ or( eq(variables['Build.SourceBranch'], 'refs/heads/master'), startsWith(variables['Build.SourceBranch'], 'refs/heads/release-') ) ]
+jobs:
+# Job 1: PR Validation - runs only on pull requests
+- job: PRValidation
+  displayName: 'PR Validation: Build and sign SafeguardJava SDK'
+  condition: eq(variables['Build.Reason'], 'PullRequest')
 
-steps:
-- task: Bash@3
-  inputs:
-    targetType: 'inline'
-    script: 'env | sort'
-  displayName: 'Display environment variables'
+  variables:
+  - template: pipeline-templates/job-variables.yml
 
-- task: AzureKeyVault@2
-  inputs:
-    azureSubscription: 'SafeguardOpenSource'
-    keyVaultName: 'SafeguardBuildSecrets'
-    secretsFilter: '*'
-  displayName: 'Get Sonatype Central Portal credentials from Azure Key Vault'
-  # TODO: restore condition to release branch only after pipeline is fixed
-  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  pool:
+    vmImage: 'ubuntu-latest'
 
-- task: AzureKeyVault@2
-  inputs:
-    azureSubscription: 'Azure.Infrastructure.CodeSigning'
-    KeyVaultName: 'CodeSigningCertificates'
-    SecretsFilter: '*'
-  displayName: 'Get code signing certificate from Azure Key Vault'
-  # TODO: restore condition to release branch only after pipeline is fixed
-  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  steps:
+  - template: pipeline-templates/build-steps.yml
 
-- task: PowerShell@2
-  inputs:
-    targetType: 'inline'
-    script: |
-      $kvSecretBytes = [System.Convert]::FromBase64String("$(OneIdentity-CodeSigning)")
-      $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
-      $certCollection.Import($kvSecretBytes,$null,[System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-      $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12,"$(OneIdentity-CodeSigningCertPassword)")
-      $certpath = '$(Build.BinariesDirectory)/$(codeSigningCertFileName)'
-      Write-Verbose -Verbose $certpath
-      [System.IO.File]::WriteAllBytes($certpath, $protectedCertificateBytes)
-  displayName: 'Save code signing certificate to PFX file'
-  # TODO: restore condition to release branch only after pipeline is fixed
-  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+# Job 2: Build and Publish - runs only on successful merges (not PRs)
+- job: BuildAndPublish
+  displayName: 'Build, sign, and publish SafeguardJava SDK'
+  condition: ne(variables['Build.Reason'], 'PullRequest')
 
-- task: Bash@3
-  inputs:
-    targetType: 'inline'
-    script: 'keytool -v -importkeystore -destkeystore $(Build.BinariesDirectory)/$(codeSigningCertFileName) -deststoretype PKCS12 -deststorepass $(OneIdentity-CodeSigningCertPassword) -srckeystore $(Build.SourcesDirectory)/$(issuerKeyStorePath) -srcstoretype PKCS12 -srcstorepass $(SigningStorePassword)'
-  displayName: 'Create the signing keystore'
-  # TODO: restore condition to release branch only after pipeline is fixed
-  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  variables:
+  - template: pipeline-templates/job-variables.yml
 
-- script: echo ${SIGNINGGKEY} > $(Build.BinariesDirectory)/signingkey.org
-  env:
-    SIGNINGGKEY: $(GpgCodeSigningKey)
-  displayName: 'Save signing key'
-  # TODO: restore condition to release branch only after pipeline is fixed
-  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  pool:
+    vmImage: 'ubuntu-latest'
 
-- task: Bash@3
-  inputs:
-    targetType: 'inline'
-    script: |
-      export GPG_TTY=$(tty)
-      sed 's/\\n/\n/g' $(Build.BinariesDirectory)/signingkey.org > $(Build.BinariesDirectory)/signingkey.asc
-      gpg --batch --import $(Build.BinariesDirectory)/signingkey.asc
-  displayName: 'Import the signing key'
-  # TODO: restore condition to release branch only after pipeline is fixed
-  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  steps:
+  - task: AzureKeyVault@2
+    inputs:
+      azureSubscription: 'SafeguardOpenSource'
+      keyVaultName: 'SafeguardBuildSecrets'
+      secretsFilter: '*'
+    displayName: 'Get build secrets from Azure Key Vault'
 
-- task: Maven@4
-  inputs:
-    mavenPomFile: 'pom.xml'
-    mavenOptions: '-Xmx3072m'
-    Options: '-X -Drevision=$(version)'
-    javaHomeOption: 'JDKVersion'
-    jdkVersionOption: '1.8'
-    jdkArchitectureOption: 'x64'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    goals: 'package'
-  displayName: 'Build and package SafeguardJava $(version)'
-  # TODO: restore condition after pipeline is fixed (temporarily disabled, release profile build below covers this)
-  condition: and(succeeded(), false)
+  - task: AzureKeyVault@2
+    inputs:
+      azureSubscription: 'Azure.Infrastructure.CodeSigning'
+      KeyVaultName: 'CodeSigningCertificates'
+      SecretsFilter: '*'
+    displayName: 'Get code signing certificate from Azure Key Vault'
 
-- task: Maven@4
-  inputs:
-    mavenPomFile: 'pom.xml'
-    mavenOptions: '-Xmx3072m'
-    Options: '-X --settings $(Build.SourcesDirectory)/settings/settings.xml -P release -D sonatypeusername=$(SonatypeUserToken) -D sonatypepassword=$(SonatypeRepositoryPassword) -D revision=$(version) -D signingcertpath=$(Build.BinariesDirectory)/$(codeSigningCertFileName) -D signingcertaliasname=1 -D signingcertpassword=$(OneIdentity-CodeSigningCertPassword) -D signingkeystorepassword=$(SigningStorePassword) -D gpgkeyname=$(gpgKeyName)'
-    javaHomeOption: 'JDKVersion'
-    jdkVersionOption: '1.8'
-    jdkArchitectureOption: 'x64'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    # TODO: restore to 'deploy' after pipeline is fixed
-    goals: 'package'
-  displayName: 'Build and package SafeguardJava $(version) with release profile'
-  # TODO: restore condition to release branch only after pipeline is fixed
-  # condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  - task: PowerShell@2
+    inputs:
+      targetType: 'inline'
+      script: |
+        $kvSecretBytes = [System.Convert]::FromBase64String("$(OneIdentity-CodeSigning)")
+        $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+        $certCollection.Import($kvSecretBytes,$null,[System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12,"$(OneIdentity-CodeSigningCertPassword)")
+        $certpath = '$(Build.BinariesDirectory)/$(codeSigningCertFileName)'
+        Write-Verbose -Verbose $certpath
+        [System.IO.File]::WriteAllBytes($certpath, $protectedCertificateBytes)
+    displayName: 'Save code signing certificate to PFX file'
 
-- task: Bash@3
-  inputs:
-    targetType: 'inline'
-    script: |
-      mvn deploy:deploy-file \
-        -DrepositoryId=github \
-        -Durl=https://maven.pkg.github.com/OneIdentity/SafeguardJava \
-        -DpomFile=pom.xml \
-        -Dfile=target/safeguardjava-$(version).jar \
-        -Dsources=target/safeguardjava-$(version)-sources.jar \
-        -Djavadoc=target/safeguardjava-$(version)-javadoc.jar \
-        -Drevision=$(version) \
-        -D githubusername=OneIdentity \
-        -D githubtoken=$(GitHubPackagesToken) \
-        --settings $(Build.SourcesDirectory)/settings/settings.xml
-  displayName: 'Publish to GitHub Packages'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: 'keytool -v -importkeystore -destkeystore $(Build.BinariesDirectory)/$(codeSigningCertFileName) -deststoretype PKCS12 -deststorepass $(OneIdentity-CodeSigningCertPassword) -srckeystore $(Build.SourcesDirectory)/$(issuerKeyStorePath) -srcstoretype PKCS12 -srcstorepass $(SigningStorePassword)'
+    displayName: 'Create the signing keystore'
 
-- task: DeleteFiles@1
-  inputs:
-    SourceFolder: '$(Build.BinariesDirectory)'
-    Contents: '$(codeSigningCertFileName)'
-  condition: succeededOrFailed()
-  displayName: 'Delete code signing certificate files'
+  - script: echo ${SIGNINGGKEY} > $(Build.BinariesDirectory)/signingkey.org
+    env:
+      SIGNINGGKEY: $(GpgCodeSigningKey)
+    displayName: 'Save signing key'
 
-- task: CopyFiles@2
-  inputs:
-    sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
-    contents: '*.jar'
-    targetFolder: $(Build.ArtifactStagingDirectory)
-  displayName: 'Copy files to staging folder'
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        export GPG_TTY=$(tty)
+        sed 's/\\n/\n/g' $(Build.BinariesDirectory)/signingkey.org > $(Build.BinariesDirectory)/signingkey.asc
+        gpg --batch --import $(Build.BinariesDirectory)/signingkey.asc
+    displayName: 'Import the signing key'
 
-- task: CopyFiles@2
-  inputs:
-    sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
-    contents: '*.asc'
-    targetFolder: $(Build.ArtifactStagingDirectory)
-  displayName: 'Copy files to staging folder'
+  - template: pipeline-templates/build-steps.yml
 
-- task: CopyFiles@2
-  inputs:
-    sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
-    contents: '**/lib/**'
-    targetFolder: $(Build.ArtifactStagingDirectory)
-  displayName: 'Copy files to staging folder'
+  - task: Maven@4
+    inputs:
+      mavenPomFile: 'pom.xml'
+      mavenOptions: '-Xmx3072m'
+      Options: '-X --settings $(Build.SourcesDirectory)/settings/settings.xml -P release -D sonatypeusername=$(SonatypeUserToken) -D sonatypepassword=$(SonatypeRepositoryPassword) -D revision=$(version) -D signingcertpath=$(Build.BinariesDirectory)/$(codeSigningCertFileName) -D signingcertaliasname=1 -D signingcertpassword=$(OneIdentity-CodeSigningCertPassword) -D signingkeystorepassword=$(SigningStorePassword) -D gpgkeyname=$(gpgKeyName)'
+      javaHomeOption: 'JDKVersion'
+      jdkVersionOption: '1.8'
+      jdkArchitectureOption: 'x64'
+      publishJUnitResults: true
+      testResultsFiles: '**/surefire-reports/TEST-*.xml'
+      goals: 'deploy'
+    displayName: 'Deploy SafeguardJava $(version) to Maven Central'
 
-- task: PublishBuildArtifacts@1
-  inputs:
-    pathToPublish: '$(Build.ArtifactStagingDirectory)'
-    artifactName: 'SafeguardJava'
-  displayName: 'Publishing the artifacts'
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        mvn deploy:deploy-file \
+          -DrepositoryId=github \
+          -Durl=https://maven.pkg.github.com/OneIdentity/SafeguardJava \
+          -DpomFile=pom.xml \
+          -Dfile=target/safeguardjava-$(version).jar \
+          -Dsources=target/safeguardjava-$(version)-sources.jar \
+          -Djavadoc=target/safeguardjava-$(version)-javadoc.jar \
+          -Drevision=$(version) \
+          -D githubusername=OneIdentity \
+          -D githubtoken=$(GitHubPackagesToken) \
+          --settings $(Build.SourcesDirectory)/settings/settings.xml
+    displayName: 'Publish to GitHub Packages'
 
-- task: Bash@3
-  inputs:
-    targetType: 'inline'
-    script: 'ls $(Build.ArtifactStagingDirectory)'
-  displayName: 'List staging directory'
+  - task: GitHubRelease@1
+    inputs:
+      gitHubConnection: 'PangaeaBuild-GitHub'
+      repositoryName: 'OneIdentity/SafeguardJava'
+      action: 'create'
+      target: '$(Build.SourceVersion)'
+      tagSource: 'userSpecifiedTag'
+      tag: 'release-$(version)'
+      title: '$(version)'
+      isPreRelease: $(isPrerelease)
+      changeLogCompareToRelease: 'lastFullRelease'
+      changeLogType: 'commitBased'
+      assets: |
+        $(Build.ArtifactStagingDirectory)/*.jar
+        $(Build.ArtifactStagingDirectory)/*.asc
+    displayName: 'Creating and publishing a release to Github'
 
-- task: GitHubRelease@1
-  inputs:
-    gitHubConnection: 'PangaeaBuild-GitHub'
-    repositoryName: 'OneIdentity/SafeguardJava'
-    action: 'create'
-    target: '$(Build.SourceVersion)'
-    tagSource: 'userSpecifiedTag'
-    tag: 'release-$(version)'
-    title: '$(version)'
-    isPreRelease: $(isPrerelease)
-    changeLogCompareToRelease: 'lastFullRelease'
-    changeLogType: 'commitBased'
-    assets: |
-      $(Build.ArtifactStagingDirectory)/*.jar
-      $(Build.ArtifactStagingDirectory)/*.asc
-  displayName: 'Creating and publishing a release to Github'
-  condition: and(succeeded(), eq(variables.isReleaseBranch, true))
+  - task: DeleteFiles@1
+    inputs:
+      SourceFolder: '$(Build.BinariesDirectory)'
+      Contents: '$(codeSigningCertFileName)'
+    condition: succeededOrFailed()
+    displayName: 'Delete code signing certificate files'
