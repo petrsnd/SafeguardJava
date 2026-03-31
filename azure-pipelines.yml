@@ -75,10 +75,10 @@ jobs:
       script: |
         set -e
         echo "Downloading CodeSignTool for Linux..."
-        curl -sL "https://www.ssl.com/download/codesigntool-for-linux/" -o CodeSignTool.zip
+        curl -sL "https://github.com/SSLcom/CodeSignTool/releases/download/v1.3.2/CodeSignTool-v1.3.2.zip" -o CodeSignTool.zip
         mkdir -p $(Build.BinariesDirectory)/CodeSignTool
         unzip -o CodeSignTool.zip -d $(Build.BinariesDirectory)/CodeSignTool
-        # Handle subdirectory nesting (zip may contain CodeSignTool-vX.Y.Z/ folder)
+        # Handle subdirectory nesting (zip contains CodeSignTool-v1.3.2/ folder)
         if [ ! -f "$(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh" ]; then
           mv $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool-v*/* $(Build.BinariesDirectory)/CodeSignTool/ 2>/dev/null || true
         fi
@@ -146,10 +146,10 @@ jobs:
       script: |
         set -e
         echo "Downloading CodeSignTool for Linux..."
-        curl -sL "https://www.ssl.com/download/codesigntool-for-linux/" -o CodeSignTool.zip
+        curl -sL "https://github.com/SSLcom/CodeSignTool/releases/download/v1.3.2/CodeSignTool-v1.3.2.zip" -o CodeSignTool.zip
         mkdir -p $(Build.BinariesDirectory)/CodeSignTool
         unzip -o CodeSignTool.zip -d $(Build.BinariesDirectory)/CodeSignTool
-        # Handle subdirectory nesting (zip may contain CodeSignTool-vX.Y.Z/ folder)
+        # Handle subdirectory nesting (zip contains CodeSignTool-v1.3.2/ folder)
         if [ ! -f "$(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh" ]; then
           mv $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool-v*/* $(Build.BinariesDirectory)/CodeSignTool/ 2>/dev/null || true
         fi
