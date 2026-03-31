@@ -33,12 +33,74 @@ jobs:
     vmImage: 'ubuntu-latest'
 
   steps:
+  # TODO(TEMP-PR-TEST): BEGIN - Remove everything between BEGIN and END markers after
+  # verifying that the build+sign pipeline works. Restore this job to just:
+  #   steps:
+  #   - template: pipeline-templates/build-steps.yml
+
+  # --- Secrets ---
+  - task: AzureKeyVault@2
+    inputs:
+      azureSubscription: 'SafeguardOpenSource'
+      keyVaultName: 'SafeguardBuildSecrets'
+      secretsFilter: '*'
+    displayName: 'Get build secrets from Azure Key Vault'
+
+  - task: AzureKeyVault@2
+    inputs:
+      ConnectedServiceName: 'OneIdentity.Infrastructure.SPPCodeSigning'
+      KeyVaultName: 'SPPCodeSigning'
+      SecretsFilter: 'SPPCodeSigning-Password, SPPCodeSigning-TotpPrivateKey'
+    displayName: 'Get code signing credentials from Azure Key Vault'
+
+  # --- GPG setup (for Maven Central signatures) ---
+  - script: echo ${SIGNINGGKEY} > $(Build.BinariesDirectory)/signingkey.org
+    env:
+      SIGNINGGKEY: $(GpgCodeSigningKey)
+    displayName: 'Save GPG signing key'
+
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        export GPG_TTY=$(tty)
+        sed 's/\\n/\n/g' $(Build.BinariesDirectory)/signingkey.org > $(Build.BinariesDirectory)/signingkey.asc
+        gpg --batch --import $(Build.BinariesDirectory)/signingkey.asc
+    displayName: 'Import GPG signing key'
+
+  # --- CodeSignTool setup (for JAR signing via SSL.com eSigner) ---
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -e
+        echo "Downloading CodeSignTool for Linux..."
+        curl -sL "https://www.ssl.com/download/codesigntool-for-linux/" -o CodeSignTool.zip
+        mkdir -p $(Build.BinariesDirectory)/CodeSignTool
+        unzip -o CodeSignTool.zip -d $(Build.BinariesDirectory)/CodeSignTool
+        # Handle subdirectory nesting (zip may contain CodeSignTool-vX.Y.Z/ folder)
+        if [ ! -f "$(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh" ]; then
+          mv $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool-v*/* $(Build.BinariesDirectory)/CodeSignTool/ 2>/dev/null || true
+        fi
+        chmod +x $(Build.BinariesDirectory)/CodeSignTool/CodeSignTool.sh
+        echo "CodeSignTool installed:"
+        ls -la $(Build.BinariesDirectory)/CodeSignTool/
+    displayName: 'Download and install CodeSignTool'
+
+  # --- Build with release profile + JAR signing (but 'package' not 'deploy' — no publishing) ---
   - template: pipeline-templates/build-steps.yml
+    parameters:
+      mavenGoals: 'package'
+      mavenOptions: '-X --batch-mode --no-transfer-progress -P release -Drevision=$(version) -Dgpgkeyname=$(gpgKeyName)'
+      signJars: true
+
+  # TODO(TEMP-PR-TEST): END - Remove everything between BEGIN and END markers
 
 # Job 2: Build and Publish - runs only on successful merges (not PRs)
 - job: BuildAndPublish
   displayName: 'Build, sign, and publish SafeguardJava SDK'
-  condition: ne(variables['Build.Reason'], 'PullRequest')
+  # TODO(TEMP-PR-TEST): Restore condition to: ne(variables['Build.Reason'], 'PullRequest')
+  condition: false
 
   variables:
   - template: pipeline-templates/job-variables.yml
