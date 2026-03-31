@@ -36,6 +36,10 @@ steps:
       workingDirectory: '$(Build.BinariesDirectory)/CodeSignTool'
       script: |
         set -e
+        # CodeSignTool requires Java 8 (fails with Java 17+ due to JPMS module access restrictions)
+        export JAVA_HOME="$JAVA_HOME_8_X64"
+        export PATH="$JAVA_HOME/bin:$PATH"
+        echo "Using Java: $(java -version 2>&1 | head -1)"
         JAR_FILE="$(Build.SourcesDirectory)/target/safeguardjava-$(version).jar"
         echo "Signing JAR: $JAR_FILE"
         ./CodeSignTool.sh sign \
