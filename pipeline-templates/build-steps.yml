@@ -28,13 +28,6 @@ steps:
 - task: CopyFiles@2
   inputs:
     sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
-    contents: '*.asc'
-    targetFolder: $(Build.ArtifactStagingDirectory)
-  displayName: 'Copy GPG signature files to staging folder'
-
-- task: CopyFiles@2
-  inputs:
-    sourceFolder: '$(Build.SourcesDirectory)/$(targetDir)'
     contents: '**/lib/**'
     targetFolder: $(Build.ArtifactStagingDirectory)
   displayName: 'Copy dependency libs to staging folder'

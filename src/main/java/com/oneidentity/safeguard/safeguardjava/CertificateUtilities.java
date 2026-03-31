@@ -10,7 +10,6 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Enumeration;
-import javax.xml.bind.DatatypeConverter;
 
 
 public class CertificateUtilities {
@@ -54,7 +53,10 @@ public class CertificateUtilities {
         byte[] der = cert.getEncoded();
         md.update(der);
         byte[] digest = md.digest();
-        String digestHex = DatatypeConverter.printHexBinary(digest);
-        return digestHex.toLowerCase();
+        StringBuilder hexString = new StringBuilder(digest.length * 2);
+        for (byte b : digest) {
+            hexString.append(String.format("%02x", b));
+        }
+        return hexString.toString();
     }
 }
