@@ -10,12 +10,6 @@ parameters:
   default: false
 
 steps:
-- task: Bash@3
-  inputs:
-    targetType: 'inline'
-    script: 'env | sort'
-  displayName: 'Display environment variables'
-
 - task: Maven@4
   inputs:
     mavenPomFile: 'pom.xml'
