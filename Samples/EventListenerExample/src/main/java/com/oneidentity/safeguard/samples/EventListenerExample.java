@@ -1,10 +1,9 @@
 package com.oneidentity.safeguard.samples;
 
 import com.oneidentity.safeguard.safeguardjava.ISafeguardConnection;
-import com.oneidentity.safeguard.safeguardjava.ISafeguardEventListener;
 import com.oneidentity.safeguard.safeguardjava.Safeguard;
 import com.oneidentity.safeguard.safeguardjava.event.ISafeguardEventHandler;
-import com.oneidentity.safeguard.safeguardjava.event.PersistentSafeguardEventListenerBase;
+import com.oneidentity.safeguard.safeguardjava.event.ISafeguardEventListener;
 
 import java.io.Console;
 
@@ -77,8 +76,7 @@ public class EventListenerExample {
             java.util.Arrays.fill(password, '\0');
 
             // Create a persistent event listener that auto-reconnects
-            listener = Safeguard.Event.getPersistentEventListener(
-                    connection, null, true);
+            listener = connection.getPersistentEventListener();
 
             // Register the handler for each event
             for (String eventName : eventNames) {
@@ -102,7 +100,11 @@ public class EventListenerExample {
             ex.printStackTrace();
         } finally {
             if (listener != null) {
-                listener.stop();
+                try {
+                    listener.stop();
+                } catch (Exception ignored) {
+                    // Best-effort cleanup
+                }
                 listener.dispose();
             }
             if (connection != null) {
