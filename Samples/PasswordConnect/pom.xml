@@ -12,8 +12,7 @@
     <name>SafeguardJava Sample - Password Connect</name>
 
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -21,9 +20,18 @@
         <dependency>
             <groupId>com.oneidentity.safeguard</groupId>
             <artifactId>safeguardjava</artifactId>
-            <version>7.5.0</version>
+            <version>8.2.0.355547-SNAPSHOT</version>
         </dependency>
     </dependencies>
+
+    <repositories>
+        <repository>
+            <id>central-snapshots</id>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+            <releases><enabled>false</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
 
     <build>
         <plugins>
