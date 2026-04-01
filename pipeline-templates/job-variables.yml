@@ -1,9 +1,6 @@
 variables:
 - name: version
-  ${{ if eq(variables.isPrerelease, 'true') }}:
-    value: '$(semanticVersion).$(Build.BuildId)-SNAPSHOT'
-  ${{ else }}:
-    value: '$(semanticVersion).$(Build.BuildId)'
+  value: '$(semanticVersion).$(Build.BuildId)$(versionSuffix)'
 - name: targetDir
   value: 'target'
 - name: gpgKeyName
