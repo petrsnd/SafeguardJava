@@ -110,6 +110,7 @@
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
+                    <deploymentName>safeguardjava-${revision}</deploymentName>
                     <autoPublish>false</autoPublish>
                     <waitUntil>validated</waitUntil>
                 </configuration>
