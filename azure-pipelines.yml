@@ -89,19 +89,31 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
+        # Preflight: verify GitHub token is valid
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+          -H "Authorization: token ${GITHUB_TOKEN}" \
+          https://api.github.com/repos/OneIdentity/SafeguardJava)
+        echo "GitHub API token check: HTTP $STATUS"
+        if [ "$STATUS" != "200" ]; then
+          echo "##[error]GitHub token is invalid or lacks access (HTTP $STATUS). Check GitHubPackagesToken in SafeguardBuildSecrets vault."
+          exit 1
+        fi
         mvn deploy:deploy-file \
           -DrepositoryId=github \
           -Durl=https://maven.pkg.github.com/OneIdentity/SafeguardJava \
           -DgroupId=com.oneidentity.safeguard \
           -DartifactId=safeguardjava \
           -Dversion=$(version) \
+          -Drevision=$(version) \
           -Dpackaging=jar \
           -Dfile=target/safeguardjava-$(version).jar \
           -Dsources=target/safeguardjava-$(version)-sources.jar \
           -Djavadoc=target/safeguardjava-$(version)-javadoc.jar \
-          -Dgithubusername=OneIdentity \
-          -Dgithubtoken=$(GitHubPackagesToken) \
+          "-Dgithubusername=OneIdentity" \
+          "-Dgithubtoken=${GITHUB_TOKEN}" \
           --settings $(Build.SourcesDirectory)/settings/settings.xml
+    env:
+      GITHUB_TOKEN: $(GitHubPackagesToken)
     displayName: 'Publish to GitHub Packages'
 
   - task: GitHubRelease@1
