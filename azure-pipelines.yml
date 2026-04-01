@@ -92,11 +92,13 @@ jobs:
         mvn deploy:deploy-file \
           -DrepositoryId=github \
           -Durl=https://maven.pkg.github.com/OneIdentity/SafeguardJava \
-          -DpomFile=pom.xml \
+          -DgroupId=com.oneidentity.safeguard \
+          -DartifactId=safeguardjava \
+          -Dversion=$(version) \
+          -Dpackaging=jar \
           -Dfile=target/safeguardjava-$(version).jar \
           -Dsources=target/safeguardjava-$(version)-sources.jar \
           -Djavadoc=target/safeguardjava-$(version)-javadoc.jar \
-          -Drevision=$(version) \
           -Dgithubusername=OneIdentity \
           -Dgithubtoken=$(GitHubPackagesToken) \
           --settings $(Build.SourcesDirectory)/settings/settings.xml
