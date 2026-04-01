@@ -1,8 +1,8 @@
 package com.oneidentity.safeguard.samples;
 
+import com.oneidentity.safeguard.safeguardjava.IA2ARetrievableAccount;
 import com.oneidentity.safeguard.safeguardjava.ISafeguardA2AContext;
 import com.oneidentity.safeguard.safeguardjava.Safeguard;
-import com.oneidentity.safeguard.safeguardjava.data.A2ARetrievableAccount;
 
 import java.io.Console;
 import java.util.List;
@@ -50,12 +50,12 @@ public class A2ARetrievalExample {
         ISafeguardA2AContext a2aContext = null;
         try {
             // Create an A2A context using certificate authentication
-            a2aContext = Safeguard.A2A.getContext(appliance, certificateFile, certPassword, null, true, null);
+            a2aContext = Safeguard.A2A.getContext(appliance, certificateFile, certPassword, null, true);
 
             // List all retrievable accounts available to this certificate
             System.out.println("Retrievable accounts:");
-            List<A2ARetrievableAccount> accounts = a2aContext.getRetrievableAccounts();
-            for (A2ARetrievableAccount account : accounts) {
+            List<IA2ARetrievableAccount> accounts = a2aContext.getRetrievableAccounts();
+            for (IA2ARetrievableAccount account : accounts) {
                 System.out.println("  Account: " + account.getAccountName()
                         + " (Asset: " + account.getAssetName()
                         + ", ApiKey: " + new String(account.getApiKey()) + ")");
