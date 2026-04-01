@@ -144,6 +144,11 @@
                 <groupId>org.ec4j.maven</groupId>
                 <artifactId>editorconfig-maven-plugin</artifactId>
                 <version>0.2.0</version>
+                <configuration>
+                    <excludes>
+                        <exclude>.flattened-pom.xml</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <id>check</id>
