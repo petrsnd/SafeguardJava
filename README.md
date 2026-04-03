@@ -61,16 +61,37 @@ A2A password changes.
 
 ## Getting Started
 
-A simple code example for calling the Safeguard API:
+### PKCE Authentication (Recommended)
+
+Recent versions of Safeguard for Privileged Passwords **disable the OAuth2 resource
+owner password grant (ROG) by default**. The recommended way to connect with a
+username and password is PKCE (Proof Key for Code Exchange), which works regardless
+of the ROG setting:
 
 ```Java
 char[] password = GetPasswordSomehow(); // default password is "Admin123"
+ISafeguardConnection connection = Safeguard.connectPkce("safeguard.sample.corp", "local", "Admin", password, null, true);
+System.out.println(connection.invokeMethod(Service.Core, Method.Get, "Me", null, null, null));
+connection.dispose();
+```
+
+### Resource Owner Grant Authentication
+
+If the resource owner grant type has been explicitly enabled on your appliance, you
+can use `Safeguard.connect()` with a username and password. This will fail with a
+400 error if ROG is disabled (the default on recent releases):
+
+```Java
+char[] password = GetPasswordSomehow();
 ISafeguardConnection connection = Safeguard.connect("safeguard.sample.corp", "local", "Admin", password, null, true);
 System.out.println(connection.invokeMethod(Service.Core, Method.Get, "Me", null, null, null));
 connection.dispose();
 ```
 
-Certificates must be in a PFX (PKCS12) file.
+### Certificate Authentication
+
+Certificates must be in a PFX (PKCS12) file. Certificate authentication is the
+recommended mechanism for automated processes:
 
 ```Java
 char[] certificatePassword = GetPasswordSomehow();
@@ -79,7 +100,9 @@ System.out.println(connection.invokeMethod(Service.Core, Method.Get, "Me", null,
 connection.dispose();
 ```
 
-A final authentication method that is available is using an existing Safeguard API token.
+### Access Token Authentication
+
+If you already have a Safeguard API token, you can use it directly:
 
 ```Java
 char[] apiToken = GetTokenSomehow();
